@@ -1,8 +1,9 @@
 /**
- * Persistente Datenbank in einer JSON-Datei (keine Installation nötig, ideal für Anfänger/Handy).
- * - Schreibt atomar (tmp-Datei + rename) und legt regelmäßig ein .bak-Backup an.
- * - Ist die Datei beschädigt, wird das Backup geladen und die kaputte Datei aufgehoben.
- * Alle anderen Module sprechen nur mit dieser API -> die Speicherung lässt sich später austauschen.
+ * Datenbank-Schicht.
+ *  - MONGODB_URI gesetzt  -> Speicherung in MongoDB (für Render/Hosting, Daten bleiben bei Neustarts erhalten)
+ *  - MONGODB_URI leer     -> Speicherung in einer lokalen JSON-Datei (für lokalen Betrieb am PC)
+ * Alle Daten liegen im Arbeitsspeicher und werden verzögert gespeichert. Nur geänderte Einträge werden
+ * nach MongoDB geschrieben. Alle anderen Module sprechen nur mit dieser API.
  */
 const fs = require('fs');
 const path = require('path');
@@ -10,12 +11,19 @@ const logger = require('../utils/logger');
 const { defaultGuildConfig } = require('../config/constants');
 
 const DB_PATH = path.resolve(process.env.DATABASE_PATH || './data/database.json');
+const MONGO_URI = process.env.MONGODB_URI || '';
+const useMongo = Boolean(MONGO_URI);
 const EMPTY = () => ({ meta: {}, guilds: {}, users: {}, tickets: {}, reports: {}, warnings: {}, counters: {} });
+const BUCKETS = ['guilds', 'users', 'tickets', 'reports', 'warnings', 'counters'];
 
 let data = EMPTY();
 let timer = null;
 let dirty = false;
 let lastBackup = 0;
+let flushing = null;
+let mongoClient = null;
+let mongoDb = null;
+const snapshot = new Map(); // "bucket:key" -> zuletzt gespeicherter JSON-Text
 const channelIndex = new Map(); // channelId -> ticket
 const ensured = new WeakSet();
 
@@ -39,7 +47,8 @@ function rebuildIndexes() {
   for (const t of Object.values(data.tickets)) channelIndex.set(t.channelId, t);
 }
 
-function init() {
+/* ---------- Laden ---------- */
+function loadFile() {
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   let loaded = null;
   for (const p of [DB_PATH, `${DB_PATH}.bak`]) {
@@ -53,14 +62,78 @@ function init() {
       try { fs.copyFileSync(p, `${p}.corrupt-${Date.now()}`); } catch { /* ignorieren */ }
     }
   }
-  data = loaded || EMPTY();
-  rebuildIndexes();
-  logger.info(`Datenbank geladen: ${DB_PATH}`);
+  return loaded;
 }
 
-function flush() {
-  if (!dirty) return;
-  dirty = false;
+async function loadMongo() {
+  const { MongoClient } = require('mongodb');
+  mongoClient = new MongoClient(MONGO_URI, { serverSelectionTimeoutMS: 20000 });
+  await mongoClient.connect();
+  mongoDb = mongoClient.db(process.env.MONGODB_DB || 'discordbot');
+
+  const loaded = EMPTY();
+  let total = 0;
+  for (const b of BUCKETS) {
+    const docs = await mongoDb.collection(b).find({}).toArray();
+    for (const d of docs) {
+      loaded[b][d._id] = JSON.parse(d.json);
+      snapshot.set(`${b}:${d._id}`, d.json);
+      total++;
+    }
+  }
+  const meta = await mongoDb.collection('meta').findOne({ _id: 'main' });
+  if (meta) { loaded.meta = JSON.parse(meta.json); snapshot.set('meta:main', meta.json); total++; }
+  logger.info(`MongoDB verbunden (Datenbank "${mongoDb.databaseName}", ${total} Einträge geladen).`);
+  return { loaded, total };
+}
+
+async function init() {
+  if (!useMongo) {
+    data = loadFile() || EMPTY();
+    rebuildIndexes();
+    logger.info(`Datenbank geladen (lokale Datei): ${DB_PATH}`);
+    return;
+  }
+  const { loaded, total } = await loadMongo();
+  data = loaded;
+  // Einmalige Übernahme alter lokaler Daten, falls MongoDB noch leer ist
+  if (total === 0) {
+    const old = loadFile();
+    if (old) {
+      data = old;
+      dirty = true;
+      await flush();
+      logger.info('Lokale Datenbank-Datei wurde einmalig nach MongoDB übernommen.');
+    }
+  }
+  rebuildIndexes();
+}
+
+/* ---------- Speichern ---------- */
+async function flushMongo() {
+  for (const b of [...BUCKETS, 'meta']) {
+    const entries = b === 'meta' ? { main: data.meta } : data[b];
+    const ops = [];
+    const seen = new Set();
+    for (const [k, v] of Object.entries(entries)) {
+      const key = `${b}:${k}`;
+      seen.add(key);
+      const json = JSON.stringify(v);
+      if (snapshot.get(key) === json) continue; // unverändert
+      ops.push({ key, json, op: { replaceOne: { filter: { _id: k }, replacement: { _id: k, json, updatedAt: new Date() }, upsert: true } } });
+    }
+    for (const key of snapshot.keys()) {
+      if (key.startsWith(`${b}:`) && !seen.has(key)) {
+        ops.push({ key, del: true, op: { deleteOne: { filter: { _id: key.slice(b.length + 1) } } } });
+      }
+    }
+    if (!ops.length) continue;
+    await mongoDb.collection(b).bulkWrite(ops.map((o) => o.op), { ordered: false });
+    for (const o of ops) { if (o.del) snapshot.delete(o.key); else snapshot.set(o.key, o.json); }
+  }
+}
+
+function flushFile() {
   try {
     const tmp = `${DB_PATH}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(data));
@@ -75,10 +148,33 @@ function flush() {
   }
 }
 
+function schedule(delay) {
+  if (timer) return;
+  timer = setTimeout(() => { timer = null; flush(); }, delay);
+}
+
+function flush() {
+  if (!dirty) return flushing || Promise.resolve();
+  dirty = false;
+  if (!useMongo) { flushFile(); return Promise.resolve(); }
+  const run = async () => {
+    try { await flushMongo(); } catch (e) {
+      dirty = true;
+      logger.error('Speichern in MongoDB fehlgeschlagen (neuer Versuch in 15 Sek.):', e.message);
+      schedule(15000);
+    }
+  };
+  flushing = (flushing || Promise.resolve()).then(run);
+  return flushing;
+}
+
 function save() {
   dirty = true;
-  if (timer) return;
-  timer = setTimeout(() => { timer = null; flush(); }, 1500);
+  schedule(useMongo ? 5000 : 1500);
+}
+
+async function close() {
+  if (mongoClient) { await mongoClient.close().catch(() => {}); mongoClient = null; }
 }
 
 /* ---------- Pfad-Helfer ---------- */
@@ -164,7 +260,7 @@ const userWarnings = (guildId, userId) =>
 function deleteWarning(guildId, id) { const ok = delete data.warnings[`${guildId}:${id}`]; save(); return ok; }
 
 module.exports = {
-  init, flush, save, getPath, setPath, deletePath, getConfig, getMeta,
+  init, flush, close, save, getPath, setPath, deletePath, getConfig, getMeta,
   getUser, peekUser, guildUsers, nextId,
   createTicket, getTicket, getTicketByChannel, guildTickets, userTickets,
   createReport, getReport, guildReports, deleteReport,

@@ -21,6 +21,7 @@ oder an einem PC – die Schritte sind identisch.
 9. [Wie du den Bot erweiterst](#9-wie-du-den-bot-erweiterst)
 10. [Fehlerbehebung](#10-fehlerbehebung)
 11. [Wichtige technische Hinweise](#11-wichtige-technische-hinweise)
+12. [Hosting auf Render mit MongoDB](#12-hosting-auf-render-mit-mongodb)
 
 ---
 
@@ -69,9 +70,13 @@ oder an einem PC – die Schritte sind identisch.
 ```env
 DISCORD_TOKEN=dein_token_aus_schritt_2
 GUILD_ID=deine_server_id
+MONGODB_URI=
 DATABASE_PATH=./data/database.json
 AUTO_DEPLOY=true
 ```
+
+> `MONGODB_URI` kannst du am PC leer lassen – dann speichert der Bot in einer lokalen Datei.
+> Für Render brauchst du sie (siehe Abschnitt 12).
 
 **Server-ID herausfinden:** Discord-Einstellungen (Zahnrad) → **Erweitert** → **Entwicklermodus** aktivieren.
 Dann Rechtsklick auf dein Server-Symbol → **Server-ID kopieren**.
@@ -242,9 +247,62 @@ src/
 
 - **Rollen-IDs** sind fest in `src/config/roles.js` hinterlegt und werden nirgends verändert oder neu erstellt.
   Über `/config roles` kannst du sie **pro Server überschreiben**, ohne den Code anzufassen.
-- **Datenbank:** Eine lokale JSON-Datei (`data/database.json`), atomar gespeichert (kein Datenverlust bei Absturz),
-  mit automatischem Backup (`data/database.json.bak`).
+- **Datenbank:** Mit `MONGODB_URI` speichert der Bot in MongoDB (Daten bleiben bei Neustarts/Deploys erhalten).
+  Ohne `MONGODB_URI` nutzt er eine lokale JSON-Datei (`data/database.json`) mit automatischem Backup.
 - **Mehrere Server gleichzeitig:** Alle Einstellungen werden pro Server (Guild-ID) getrennt gespeichert –
   du kannst den Bot ohne Änderungen auf mehrere Server gleichzeitig einladen.
 - **Sicherheit:** Der Bot-Token steht nie im Code, nur in der `.env`-Datei, die laut `.gitignore`
   niemals mit hochgeladen wird. Committe deine `.env` niemals zu GitHub.
+
+---
+
+## 12. Hosting auf Render mit MongoDB
+
+Auf Render wird das Dateisystem bei jedem Neustart oder Deploy zurückgesetzt. Eine lokale Datei reicht deshalb
+nicht. Der Bot speichert dort in **MongoDB** und hat einen kleinen Webserver, den dein Cron-Job anpingen kann.
+
+### 12.1 MongoDB Atlas einrichten (Datenbank)
+1. Registriere dich auf https://www.mongodb.com/atlas und erstelle einen kostenlosen Cluster.
+2. **Database Access** → **Add New Database User**: Benutzername und Passwort vergeben
+   (am besten nur Buchstaben und Zahlen, sonst müssen Sonderzeichen URL-kodiert werden).
+3. **Network Access** → **Add IP Address** → **Allow access from anywhere** (`0.0.0.0/0`).
+   Das ist nötig, weil sich die IP-Adresse von Render ändern kann.
+4. **Database** → **Connect** → **Drivers**: Kopiere den Connection String. Er sieht so aus:
+   `mongodb+srv://benutzer:<password>@cluster0.xxxxx.mongodb.net/`
+   Ersetze `<password>` durch dein echtes Passwort.
+
+Die Datenbank und die Sammlungen legt der Bot beim ersten Start selbst an.
+
+### 12.2 Web Service auf Render
+1. Lade das Projekt in ein (privates) GitHub-Repository. Die `.env` wird laut `.gitignore` nicht mit hochgeladen.
+2. Render → **New** → **Web Service** → Repository auswählen.
+3. Einstellungen:
+   - **Build Command:** `npm install`
+   - **Start Command:** `npm start`
+4. Unter **Environment** diese Variablen eintragen:
+
+| Name | Wert |
+|---|---|
+| `DISCORD_TOKEN` | dein Bot-Token |
+| `MONGODB_URI` | dein Connection String aus 12.1 |
+| `GUILD_ID` | deine Server-ID |
+
+`PORT` musst du **nicht** setzen, das macht Render automatisch.
+
+5. Deploy starten. Im Log siehst du bei Erfolg unter anderem:
+   `MongoDB verbunden …`, `Webserver läuft auf Port …` und `Bot ist vollständig bereit.`
+
+### 12.3 Cron-Job (damit der Dienst nicht einschläft)
+Web Services werden bei Inaktivität schlafen gelegt, dann ist der Bot offline. Der Bot hat dafür die Adresse
+`https://DEIN-DIENST.onrender.com/health`. Sie liefert immer eine kurze Statusmeldung zurück.
+
+Rufe diese Adresse alle **5–10 Minuten** auf, entweder mit deinem Render-Cron-Job
+(Befehl: `curl -fsS https://DEIN-DIENST.onrender.com/health`) oder mit einem externen Dienst wie
+cron-job.org oder UptimeRobot. Aktuelle Details und Grenzen deines Tarifs findest du in der Render-Dokumentation.
+
+### 12.4 Wichtig
+- **Ohne `MONGODB_URI` gehen auf Render alle Daten bei jedem Neustart verloren.** Der Bot warnt dich im Log davor.
+- Läuft der Bot gleichzeitig am PC und auf Render mit demselben Token, kommt es zu doppelten Antworten.
+  Starte ihn immer nur an einer Stelle.
+- Alte lokale Daten aus `data/database.json` werden einmalig nach MongoDB übernommen, wenn MongoDB noch leer ist
+  und die Datei beim Start vorhanden ist.

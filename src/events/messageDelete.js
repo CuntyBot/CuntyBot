@@ -7,7 +7,9 @@ module.exports = {
   async execute(message) {
     if (!message.guild || message.author?.bot) return;
     await sendLog(message.guild, 'messageDelete', {
-      description: `🗑️ Nachricht von ${message.author ?? 'Unbekannt'} in ${message.channel} gelöscht.`,
+      target: message.author,
+      title: 'Nachricht gelöscht',
+      description: `Kanal: ${message.channel}`,
       fields: [{ name: 'Inhalt', value: truncate(message.content || '*Kein Text im Cache (z.B. Bild/Embed oder zu alt)*', 1000) }],
     });
   },

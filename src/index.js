@@ -1,28 +1,19 @@
 require('dotenv').config();
-const express = require('express');
-const app = express();
-const PORT = process.env.PORT || 10000;
-
-app.get('/', (req, res) => {
-    res.send('Bot ist online!');
-});
-
-app.listen(PORT, () => {
-    console.log(`Webserver läuft auf Port ${PORT}`);
-});
-
 const fs = require('fs');
 const path = require('path');
 const { Client, GatewayIntentBits, Partials, Collection } = require('discord.js');
 const logger = require('./utils/logger');
 const db = require('./database');
+const { startWebServer } = require('./web');
 
 if (!process.env.DISCORD_TOKEN) {
   logger.error('Kein DISCORD_TOKEN in der .env gefunden. Bitte .env.example nach .env kopieren und ausfüllen.');
   process.exit(1);
 }
 
-db.init();
+if (process.env.RENDER && !process.env.MONGODB_URI) {
+  logger.warn('⚠️ Auf Render ohne MONGODB_URI gehen alle Daten bei jedem Neustart verloren! Bitte MONGODB_URI setzen.');
+}
 
 const client = new Client({
   intents: [
@@ -62,16 +53,27 @@ logger.info(`📦 ${fs.readdirSync(eventsDir).filter((f) => f.endsWith('.js')).l
 process.on('unhandledRejection', (err) => logger.error('Unhandled Rejection:', err));
 process.on('uncaughtException', (err) => logger.error('Uncaught Exception:', err));
 
-function shutdown(signal) {
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
   logger.info(`${signal} empfangen – speichere Datenbank und beende …`);
-  db.flush();
+  try {
+    await Promise.race([db.flush(), new Promise((r) => setTimeout(r, 8000))]);
+    await db.close();
+  } catch (e) { logger.error('Fehler beim Speichern:', e.message); }
   client.destroy();
   process.exit(0);
 }
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-client.login(process.env.DISCORD_TOKEN).catch((e) => {
-  logger.error('Login fehlgeschlagen. Ist der DISCORD_TOKEN korrekt?', e.message);
+/* ---------- Start ---------- */
+(async () => {
+  startWebServer(client); // zuerst, damit Render den Port sofort erkennt
+  await db.init(); // Datenbank muss geladen sein, bevor der Bot Events bekommt
+  await client.login(process.env.DISCORD_TOKEN);
+})().catch((e) => {
+  logger.error('Start fehlgeschlagen:', e.message);
   process.exit(1);
 });

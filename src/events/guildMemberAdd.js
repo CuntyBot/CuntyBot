@@ -8,8 +8,9 @@ module.exports = {
   async execute(member) {
     await assignJoinRoles(member);
     await sendLog(member.guild, 'memberJoin', {
+      target: member,
+      title: 'Mitglied beigetreten',
       description: `${member} ist dem Server beigetreten.`,
-      thumbnail: member.user.displayAvatarURL(),
       fields: [
         { name: 'Account erstellt', value: ts(member.user.createdTimestamp, 'R'), inline: true },
         { name: 'Mitglieder gesamt', value: String(member.guild.memberCount), inline: true },

@@ -52,10 +52,10 @@ async function warn(guild, moderator, user, reason) {
   const count = db.userWarnings(guild.id, user.id).length;
   await notify(guild, user, '⚠️ Du wurdest verwarnt', reason, [`**Warnung Nr.:** ${count}`]);
   await sendLog(guild, 'moderation', {
-    title: '⚠️ Warnung',
+    target: user,
+    title: 'Warnung erhalten',
+    description: `Verwarnt von ${moderator}`,
     fields: [
-      { name: 'User', value: `${user} (\`${user.id}\`)`, inline: true },
-      { name: 'Moderator', value: `${moderator}`, inline: true },
       { name: 'Warn-ID', value: `#${w.id} (gesamt: ${count})`, inline: true },
       { name: 'Grund', value: reason },
     ],
@@ -73,7 +73,9 @@ async function warn(guild, moderator, user, reason) {
         await member.timeout(mc.warnTimeoutMinutes * 60000, `Auto: ${count} Warnungen`);
         autoTimeout = true;
         await sendLog(guild, 'timeout', {
-          description: `${user} wurde automatisch für ${mc.warnTimeoutMinutes} Min. stummgeschaltet (${count} Warnungen).`,
+          target: user,
+          title: 'Automatischer Timeout',
+          description: `Stummgeschaltet für ${mc.warnTimeoutMinutes} Min. (${count} Warnungen erreicht).`,
         });
       } catch { /* ignorieren */ }
     }
@@ -87,19 +89,21 @@ async function timeoutMember(guild, moderator, member, ms, reason) {
   await member.timeout(ms, auditReason(moderator, reason));
   await notify(guild, member.user, '⏳ Du hast einen Timeout erhalten', reason, [`**Dauer:** ${fmtDuration(ms)}`]);
   await sendLog(guild, 'timeout', {
-    fields: [
-      { name: 'User', value: `${member} (\`${member.id}\`)`, inline: true },
-      { name: 'Moderator', value: `${moderator}`, inline: true },
-      { name: 'Dauer', value: fmtDuration(ms), inline: true },
-      { name: 'Grund', value: reason },
-    ],
+    target: member,
+    title: 'Timeout erhalten',
+    description: `Von ${moderator} für ${fmtDuration(ms)}`,
+    fields: [{ name: 'Grund', value: reason }],
   });
 }
 
 async function removeTimeout(guild, moderator, member) {
   markAction(`timeout:${guild.id}:${member.id}`);
   await member.timeout(null, auditReason(moderator, 'Timeout aufgehoben'));
-  await sendLog(guild, 'moderation', { description: `⏳ Timeout von ${member} aufgehoben durch ${moderator}.` });
+  await sendLog(guild, 'moderation', {
+    target: member,
+    title: 'Timeout aufgehoben',
+    description: `Aufgehoben von ${moderator}.`,
+  });
 }
 
 /* ---------- Kick / Ban / Unban ---------- */
@@ -108,11 +112,10 @@ async function kickMember(guild, moderator, member, reason) {
   markAction(`kick:${guild.id}:${member.id}`);
   await member.kick(auditReason(moderator, reason));
   await sendLog(guild, 'kick', {
-    fields: [
-      { name: 'User', value: `${member.user} (\`${member.id}\`)`, inline: true },
-      { name: 'Moderator', value: `${moderator}`, inline: true },
-      { name: 'Grund', value: reason },
-    ],
+    target: member.user,
+    title: 'Mitglied gekickt',
+    description: `Von ${moderator}`,
+    fields: [{ name: 'Grund', value: reason }],
   });
 }
 
@@ -121,11 +124,10 @@ async function banUser(guild, moderator, user, reason, deleteDays = 0) {
   markAction(`ban:${guild.id}:${user.id}`);
   await guild.members.ban(user.id, { reason: auditReason(moderator, reason), deleteMessageSeconds: deleteDays * 86400 });
   await sendLog(guild, 'ban', {
-    fields: [
-      { name: 'User', value: `${user} (\`${user.id}\`)`, inline: true },
-      { name: 'Moderator', value: `${moderator}`, inline: true },
-      { name: 'Grund', value: reason },
-    ],
+    target: user,
+    title: 'Mitglied gebannt',
+    description: `Von ${moderator}`,
+    fields: [{ name: 'Grund', value: reason }],
   });
 }
 
@@ -134,11 +136,10 @@ async function unbanUser(guild, moderator, userId, reason) {
   markAction(`unban:${guild.id}:${userId}`);
   await guild.bans.remove(userId, auditReason(moderator, reason));
   await sendLog(guild, 'unban', {
-    fields: [
-      { name: 'User', value: `${ban.user.username} (\`${userId}\`)`, inline: true },
-      { name: 'Moderator', value: `${moderator}`, inline: true },
-      { name: 'Grund', value: reason },
-    ],
+    target: ban.user,
+    title: 'Mitglied entbannt',
+    description: `Von ${moderator}`,
+    fields: [{ name: 'Grund', value: reason }],
   });
   return ban.user;
 }

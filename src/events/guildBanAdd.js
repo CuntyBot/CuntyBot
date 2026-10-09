@@ -8,8 +8,9 @@ module.exports = {
     // Wurde der Ban schon von /mod ban geloggt? Dann hier nicht doppelt loggen.
     if (wasAction(`ban:${ban.guild.id}:${ban.user.id}`)) return;
     await sendLog(ban.guild, 'ban', {
-      description: `${ban.user.tag} wurde gebannt (außerhalb des Bots, z.B. über Discord selbst).`,
-      fields: [{ name: 'User', value: `${ban.user} (\`${ban.user.id}\`)` }],
+      target: ban.user,
+      title: 'Mitglied gebannt',
+      description: `${ban.user.tag} wurde gebannt (außerhalb des Bots, z. B. über Discord selbst).`,
     });
   },
 };

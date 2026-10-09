@@ -8,11 +8,11 @@ module.exports = {
     const guild = after.guild;
     const member = after.member;
     if (!before.channelId && after.channelId) {
-      await sendLog(guild, 'voiceJoin', { description: `🔊 ${member} ist ${after.channel} beigetreten.` });
+      await sendLog(guild, 'voiceJoin', { target: member, title: 'Voice beigetreten', description: `${member.channel}` });
     } else if (before.channelId && !after.channelId) {
-      await sendLog(guild, 'voiceLeave', { description: `🔇 ${member} hat ${before.channel} verlassen.` });
+      await sendLog(guild, 'voiceLeave', { target: member, title: 'Voice verlassen', description: `${before.channel}` });
     } else {
-      await sendLog(guild, 'voiceMove', { description: `🔀 ${member} wechselte von ${before.channel} zu ${after.channel}.` });
+      await sendLog(guild, 'voiceMove', { target: member, title: 'Voice gewechselt', description: `${before.channel} → ${after.channel}` });
     }
   },
 };

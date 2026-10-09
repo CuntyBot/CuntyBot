@@ -9,8 +9,9 @@ module.exports = {
   async execute(member) {
     const kicked = wasAction(`kick:${member.guild.id}:${member.id}`);
     await sendLog(member.guild, 'memberLeave', {
-      description: `${member.user.tag} hat den Server verlassen.${kicked ? ' (gekickt)' : ''}`,
-      thumbnail: member.user.displayAvatarURL(),
+      target: member,
+      title: kicked ? 'Mitglied gekickt' : 'Mitglied hat den Server verlassen',
+      description: `${member.user.tag}${kicked ? ' wurde gekickt.' : ' hat den Server verlassen.'}`,
       fields: [{ name: 'Mitglieder gesamt', value: String(member.guild.memberCount), inline: true }],
     });
     await tickets.handleMemberLeave(member).catch((e) => logger.error('handleMemberLeave-Fehler:', e));
