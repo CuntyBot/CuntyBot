@@ -370,12 +370,14 @@ function renameCooldown(channelId) {
 }
 
 /* ---------- Panels ---------- */
-function panelPayload(guild, typeIds, { title, description, style = 'buttons' }) {
+function panelPayload(guild, typeIds, { title, description, style = 'buttons', color, footer, image }) {
   const cfg = db.getConfig(guild.id);
   const types = typeIds.map((id) => typeOf(cfg, id)).filter(Boolean);
   const list = types.map((t) => `${t.emoji} **${t.name}**${t.description ? ` – ${t.description}` : ''}`).join('\n');
-  const embed = new EmbedBuilder().setColor(COLORS.primary).setTitle(truncate(title, 250))
+  const embed = new EmbedBuilder().setColor(parseHex(color) ?? COLORS.primary).setTitle(truncate(title, 250))
     .setDescription(truncate(`${description}\n\n${list}`, 4000));
+  if (footer) embed.setFooter({ text: truncate(footer, 200) });
+  if (image) embed.setImage(image);
   if (style === 'menu' || types.length > 5) {
     const menu = new StringSelectMenuBuilder().setCustomId('ticket:panelselect').setPlaceholder('Wähle den Ticket-Typ …')
       .addOptions(types.slice(0, 25).map((t) => ({ label: truncate(t.name, 100), value: t.id, emoji: t.emoji, description: truncate(t.description || t.name, 100) })));

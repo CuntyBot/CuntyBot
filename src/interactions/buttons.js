@@ -156,11 +156,21 @@ async function handleHelp(i) {
   return respond(i, 'Nutze das Auswahlmenü, um eine Kategorie zu wählen.');
 }
 
+async function handleKummer(i) {
+  const modal = new ModalBuilder().setCustomId('kummer:submit').setTitle('Anonymen Kummer teilen')
+    .addComponents(
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('title').setLabel('Titel (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(100)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('message').setLabel('Was beschäftigt dich?').setStyle(TextInputStyle.Paragraph).setRequired(true).setMinLength(5).setMaxLength(1500)),
+    );
+  return i.showModal(modal);
+}
+
 module.exports = async function buttons(i) {
   const [ns] = i.customId.split(':');
   if (ns === 'ticket') return handleTicket(i);
   if (ns === 'embed') return handleEmbed(i);
   if (ns === 'help') return handleHelp(i);
+  if (ns === 'kummer' && i.customId === 'kummer:open') return handleKummer(i);
   if (i.customId === 'cfgmenu') return cfgUi.renderMenu(i);
   if (ns === 'cfgback') return cfgUi.handleBack(i);
 };

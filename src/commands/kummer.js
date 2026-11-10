@@ -1,0 +1,7 @@
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { respond } = require('../utils/helpers');
+const community = require('../systems/community');
+module.exports={data:new SlashCommandBuilder().setName('kummer').setDescription('Anonyme Kummerbox konfigurieren').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+ .addSubcommand(s=>s.setName('setup').setDescription('Kummerbox-Panel posten').addChannelOption(o=>o.setName('channel').setDescription('Confessions-Kanal').addChannelTypes(ChannelType.GuildText).setRequired(true)).addStringOption(o=>o.setName('title').setDescription('Titel').setMaxLength(250)).addStringOption(o=>o.setName('description').setDescription('Beschreibung').setMaxLength(1800)))
+ .addSubcommand(s=>s.setName('disable').setDescription('Kummerbox deaktivieren')),
+ async execute(i){const c=community.cfg(i.guildId).kummer;if(i.options.getSubcommand()==='disable'){c.enabled=false;require('../database').save();return respond(i,'✅ Kummerbox deaktiviert.');}c.channelId=i.options.getChannel('channel').id;c.title=i.options.getString('title')||'📮 Kummerkasten';c.description=i.options.getString('description')||'Hast du etwas, das dich beschäftigt? Teile es anonym mit der Community.';c.enabled=true;require('../database').save();await community.postKummerPanel(i.options.getChannel('channel'),c);return respond(i,'✅ Kummerbox-Panel wurde erstellt.');}}

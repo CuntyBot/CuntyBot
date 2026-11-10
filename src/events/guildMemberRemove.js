@@ -3,10 +3,12 @@ const { sendLog } = require('../systems/logging');
 const tickets = require('../systems/tickets');
 const { wasAction } = require('../systems/moderation');
 const logger = require('../utils/logger');
+const community = require('../systems/community');
 
 module.exports = {
   name: Events.GuildMemberRemove,
   async execute(member) {
+    await community.sendMemberMessage(member, 'goodbye');
     const kicked = wasAction(`kick:${member.guild.id}:${member.id}`);
     await sendLog(member.guild, 'memberLeave', {
       target: member,

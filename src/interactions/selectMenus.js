@@ -1,4 +1,4 @@
-const { ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { ActionRowBuilder, StringSelectMenuBuilder, PermissionFlagsBits } = require('discord.js');
 const { respond } = require('../utils/helpers');
 const { getTicketByChannel } = require('../database');
 const tickets = require('../systems/tickets');
@@ -33,6 +33,17 @@ async function handleHelpSelect(i) {
 module.exports = async function selectMenus(i) {
   if (i.customId.startsWith('ticket:')) return handleTicketSelect(i);
   if (i.customId === 'help:pick') return handleHelpSelect(i);
+  if (i.customId === 'selfrole:select') {
+    const allowed = new Set((i.component?.options || []).map(o => o.value));
+    const me = await i.guild.members.fetchMe();
+    for (const id of i.values) {
+      const role = i.guild.roles.cache.get(id);
+      if (!role || !allowed.has(id) || role.managed || role.id === i.guild.id || role.position >= me.roles.highest.position || role.permissions.has(PermissionFlagsBits.Administrator)) continue;
+      if (i.member.roles.cache.has(id)) await i.member.roles.remove(id).catch(() => {});
+      else await i.member.roles.add(id).catch(() => {});
+    }
+    return respond(i, '✅ Deine Self-Roles wurden aktualisiert.');
+  }
 
   if (i.customId === 'cfgmenu') return cfgUi.renderArea(i, i.values[0]);
   if (i.customId.startsWith('cfgpick:')) return cfgUi.handlePick(i);

@@ -255,6 +255,7 @@ function deleteReport(guildId, id) { const ok = delete data.reports[`${guildId}:
 /* ---------- Warnungen ---------- */
 function createWarning(w) { data.warnings[`${w.guildId}:${w.id}`] = w; save(); return w; }
 const getWarning = (guildId, id) => data.warnings[`${guildId}:${id}`] || null;
+const guildWarnings = (guildId) => Object.values(data.warnings).filter((w) => w.guildId === guildId);
 const userWarnings = (guildId, userId) =>
   Object.values(data.warnings).filter((w) => w.guildId === guildId && w.userId === userId);
 function deleteWarning(guildId, id) { const ok = delete data.warnings[`${guildId}:${id}`]; save(); return ok; }
@@ -264,5 +265,5 @@ module.exports = {
   getUser, peekUser, guildUsers, nextId,
   createTicket, getTicket, getTicketByChannel, guildTickets, userTickets,
   createReport, getReport, guildReports, deleteReport,
-  createWarning, getWarning, userWarnings, deleteWarning,
+  createWarning, getWarning, guildWarnings, userWarnings, deleteWarning,
 };

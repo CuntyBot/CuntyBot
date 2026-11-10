@@ -22,7 +22,10 @@ module.exports = {
       .addStringOption((o) => o.setName('title').setDescription('Titel des Panels').setRequired(true))
       .addStringOption((o) => o.setName('description').setDescription('Beschreibung').setRequired(true))
       .addStringOption((o) => o.setName('types').setDescription('Typ-IDs, Komma-getrennt (leer = alle)'))
-      .addStringOption((o) => o.setName('style').setDescription('Anzeige').addChoices({ name: 'Buttons', value: 'buttons' }, { name: 'Auswahlmenü', value: 'menu' })))
+      .addStringOption((o) => o.setName('style').setDescription('Anzeige').addChoices({ name: 'Buttons', value: 'buttons' }, { name: 'Auswahlmenü', value: 'menu' }))
+      .addStringOption((o) => o.setName('color').setDescription('Embed-Farbe als Hex, z.B. #FF4FA3'))
+      .addStringOption((o) => o.setName('footer').setDescription('Footer-Text').setMaxLength(200))
+      .addStringOption((o) => o.setName('image').setDescription('Bild-URL (optional)').setMaxLength(500)))
     .addSubcommand((s) => s.setName('create').setDescription('Erstellt manuell ein Ticket')
       .addStringOption((o) => o.setName('type').setDescription('Tickettyp').setRequired(true).setAutocomplete(true))
       .addStringOption((o) => o.setName('reason').setDescription('Kurze Beschreibung deines Anliegens')))
@@ -45,7 +48,8 @@ module.exports = {
         .addStringOption((o) => o.setName('name').setDescription('Anzeigename').setRequired(true))
         .addStringOption((o) => o.setName('emoji').setDescription('Emoji').setRequired(true))
         .addStringOption((o) => o.setName('description').setDescription('Beschreibung im Panel').setRequired(true))
-        .addRoleOption((o) => o.setName('role').setDescription('Rolle, die Tickets sehen darf').setRequired(true))
+        .addRoleOption((o) => o.setName('role').setDescription('Eine Teamrolle, die Tickets sehen darf'))
+        .addStringOption((o) => o.setName('roles').setDescription('Mehrere Rollen-IDs oder Erwähnungen, kommasepariert'))
         .addChannelOption((o) => o.setName('category').setDescription('Kategorie für die Kanäle').addChannelTypes(ChannelType.GuildCategory))
         .addStringOption((o) => o.setName('color').setDescription('Hex-Farbe, z.B. #5865F2'))
         .addStringOption((o) => o.setName('buttonlabel').setDescription('Text auf dem Button'))
@@ -55,7 +59,8 @@ module.exports = {
         .addStringOption((o) => o.setName('name').setDescription('Neuer Anzeigename'))
         .addStringOption((o) => o.setName('emoji').setDescription('Neues Emoji'))
         .addStringOption((o) => o.setName('description').setDescription('Neue Beschreibung'))
-        .addRoleOption((o) => o.setName('role').setDescription('Neue Rolle'))
+        .addRoleOption((o) => o.setName('role').setDescription('Eine neue Teamrolle'))
+        .addStringOption((o) => o.setName('roles').setDescription('Rollen-IDs oder Erwähnungen, kommasepariert'))
         .addChannelOption((o) => o.setName('category').setDescription('Neue Kategorie').addChannelTypes(ChannelType.GuildCategory))
         .addStringOption((o) => o.setName('color').setDescription('Neue Hex-Farbe')))
       .addSubcommand((s) => s.setName('delete').setDescription('Tickettyp löschen').addStringOption((o) => o.setName('id').setDescription('ID des Typs').setRequired(true).setAutocomplete(true)))),
@@ -79,9 +84,12 @@ module.exports = {
         if (cfg.tickets.types[id]) return respond(i, '❌ Diese ID existiert bereits.');
         const color = i.options.getString('color');
         if (color && parseHex(color) === null) return respond(i, '❌ Ungültige Hex-Farbe.');
+        const roleIds = [...new Set([...(i.options.getRole('role') ? [i.options.getRole('role').id] : []), ...((i.options.getString('roles') || '').match(/\d{17,20}/g) || [])])];
+        if (!roleIds.length) return respond(i, '❌ Gib mindestens eine Teamrolle über `role` oder `roles` an.');
+        for (const rid of roleIds) { const role = i.guild.roles.cache.get(rid); if (!role || role.managed || role.id === i.guild.id) return respond(i, `❌ Ungültige Teamrolle: ${rid}`); }
         cfg.tickets.types[id] = {
           name: i.options.getString('name'), emoji: i.options.getString('emoji'), description: i.options.getString('description'),
-          roleKeys: [], roleIds: [i.options.getRole('role').id], categoryKey: null, categoryId: i.options.getChannel('category')?.id || null,
+          roleKeys: [], roleIds, categoryKey: null, categoryId: i.options.getChannel('category')?.id || null,
           color: color || '#5865F2', buttonLabel: i.options.getString('buttonlabel') || null, buttonStyle: i.options.getString('style') || 'primary',
         };
         save();
@@ -96,7 +104,7 @@ module.exports = {
         if (i.options.getString('name')) t.name = i.options.getString('name');
         if (i.options.getString('emoji')) t.emoji = i.options.getString('emoji');
         if (i.options.getString('description')) t.description = i.options.getString('description');
-        if (i.options.getRole('role')) t.roleIds = [i.options.getRole('role').id];
+        if (i.options.getRole('role') || i.options.getString('roles')) { const ids = [...new Set([...(i.options.getRole('role') ? [i.options.getRole('role').id] : []), ...((i.options.getString('roles') || '').match(/\d{17,20}/g) || [])])]; if (!ids.length) return respond(i, '❌ Gib mindestens eine gültige Teamrolle an.'); for (const rid of ids) { const role = i.guild.roles.cache.get(rid); if (!role || role.managed || role.id === i.guild.id) return respond(i, `❌ Ungültige Teamrolle: ${rid}`); } t.roleIds = ids; t.roleKeys = []; }
         if (i.options.getChannel('category')) t.categoryId = i.options.getChannel('category').id;
         if (color) t.color = color;
         save();
@@ -125,7 +133,11 @@ module.exports = {
       const unknown = ids.filter((id) => !cfg.tickets.types[id]);
       if (unknown.length) return respond(i, `❌ Unbekannte Typ-IDs: ${unknown.join(', ')}`);
       const channel = i.options.getChannel('channel');
-      const payload = tickets.panelPayload(i.guild, ids, { title: i.options.getString('title'), description: i.options.getString('description'), style: i.options.getString('style') || 'buttons' });
+      const color = i.options.getString('color');
+      if (color && parseHex(color) === null) return respond(i, '❌ Ungültige Hex-Farbe.');
+      const image = i.options.getString('image');
+      if (image && !/^https?:\/\//i.test(image)) return respond(i, '❌ Bild muss eine HTTP(S)-URL sein.');
+      const payload = tickets.panelPayload(i.guild, ids, { title: i.options.getString('title'), description: i.options.getString('description'), style: i.options.getString('style') || 'buttons', color, footer: i.options.getString('footer'), image });
       await channel.send(payload);
       return respond(i, `✅ Ticket-Panel wurde in ${channel} gesendet.`);
     }

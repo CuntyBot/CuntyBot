@@ -2,11 +2,13 @@ const { Events } = require('discord.js');
 const { assignJoinRoles } = require('../systems/autoroles');
 const { sendLog } = require('../systems/logging');
 const { ts } = require('../utils/helpers');
+const community = require('../systems/community');
 
 module.exports = {
   name: Events.GuildMemberAdd,
   async execute(member) {
     await assignJoinRoles(member);
+    await community.sendMemberMessage(member, 'welcome');
     await sendLog(member.guild, 'memberJoin', {
       target: member,
       title: 'Mitglied beigetreten',

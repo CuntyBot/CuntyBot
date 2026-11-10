@@ -4,6 +4,8 @@ const tickets = require('../systems/tickets');
 const verification = require('../systems/verification');
 const embeds = require('../systems/embeds');
 const cfgUi = require('../systems/config/ui');
+const community = require('../systems/community');
+const { EmbedBuilder } = require('discord.js');
 
 const val = (i, id) => { try { return i.fields.getTextInputValue(id); } catch { return ''; } };
 
@@ -69,7 +71,21 @@ async function handleEmbedModal(i) {
   return i.update(embeds.builderPayload(d, i.guildId));
 }
 
+async function handleKummer(i) {
+  const settings = community.cfg(i.guildId).kummer;
+  if (!settings.enabled || !settings.channelId) return respond(i, '❌ Die Kummerbox ist momentan nicht verfügbar.');
+  const channel = await i.guild.channels.fetch(settings.channelId).catch(() => null);
+  if (!channel?.isTextBased()) return respond(i, '❌ Der Kummerbox-Kanal wurde nicht gefunden.');
+  const title = val(i, 'title').trim().slice(0, 100) || 'Anonymer Kummer';
+  const body = val(i, 'message').trim().replace(/@(everyone|here)/gi, '@\u200b$1');
+  if (body.length < 5) return respond(i, '❌ Deine Nachricht ist zu kurz.');
+  const post = await channel.send({ allowedMentions: { parse: [] }, embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`📮 ${title}`).setDescription(body).setFooter({ text: 'Anonymer Beitrag • Bitte respektvoll antworten' }).setTimestamp()] });
+  await post.startThread({ name: `Kummer • ${post.id.slice(-5)}`, autoArchiveDuration: 1440 }).catch(() => null);
+  return respond(i, '✅ Dein Beitrag wurde anonym veröffentlicht. Discord verarbeitet unabhängig davon technische Verbindungsdaten.');
+}
+
 module.exports = async function modals(i) {
+  if (i.customId === 'kummer:submit') return handleKummer(i);
   if (i.customId.startsWith('ticketm:')) return handleTicketModal(i);
   if (i.customId.startsWith('embedm:')) return handleEmbedModal(i);
   if (i.customId.startsWith('cfgmodal:')) return cfgUi.handleModal(i);

@@ -37,7 +37,7 @@ const CATEGORIES = {
   },
   other: {
     label: '🧭 Sonstiges', check: () => true,
-    text: '`/server info`/`membercount`/`roles`/`channels`\n`/user info`/`avatar`/`banner`\n`/autorole` (Übersicht)',
+    text: '`/server info`/`membercount`/`roles`/`channels`\n`/user info`/`avatar`/`banner`\n`/autorole` (Übersicht)\n`/backup` – Backup als Datei *(Owner)*',
   },
 };
 

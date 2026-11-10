@@ -1,0 +1,7 @@
+const { SlashCommandBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { respond } = require('../utils/helpers');
+const community = require('../systems/community');
+module.exports={data:new SlashCommandBuilder().setName('selfrole').setDescription('Self-role Panel verwalten').setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+ .addSubcommand(s=>s.setName('panel').setDescription('Self-role Panel erstellen').addChannelOption(o=>o.setName('channel').setDescription('Zielkanal').addChannelTypes(ChannelType.GuildText).setRequired(true)).addStringOption(o=>o.setName('title').setDescription('Panel-Titel').setRequired(true).setMaxLength(250)).addStringOption(o=>o.setName('roles').setDescription('Rollen-IDs oder Rollen-Erwähnungen, kommasepariert').setRequired(true))),
+ async execute(i){const channel=i.options.getChannel('channel');const ids=[...i.options.getString('roles').matchAll(/\d{17,20}/g)].map(m=>m[0]);if(!ids.length)return respond(i,'❌ Gib mindestens eine Rollen-ID oder Rollen-Erwähnung an.');const me=await i.guild.members.fetchMe();for(const id of ids){const role=i.guild.roles.cache.get(id);if(!role||role.managed||role.id===i.guild.id||role.position>=me.roles.highest.position)return respond(i,`❌ Rolle <@&${id}> ist ungültig oder liegt über meiner Bot-Rolle.`);}
+ await community.postSelfRolePanel(channel,i.options.getString('title'),ids);return respond(i,'✅ Self-role Panel erstellt.');}}
